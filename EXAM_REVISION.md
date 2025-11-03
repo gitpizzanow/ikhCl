@@ -43,14 +43,15 @@
 
 **Key Features:**
 
-**Distributed** = Your file is stored on multiple computers (not just one)
+**<span style="color:#4CAF50;">Distributed</span>** = Your file is stored on multiple computers (not just one)  
 - Example: You have a 1GB video. HDFS splits it across 5 different machines.
 
-**Blocks** = Your file is cut into pieces (default: 128 MB each piece)
-- Example: Your 1GB video → split into 8 blocks of 128MB each
+**<span style="color:#2196F3;">Blocks</span>** = Your file is cut into pieces (default: 128 MB each piece)  
+- Example: Your 1GB video → split into 8 blocks of 128 MB each.
 
-**Replicated** = Each piece is copied 3 times (stored on 3 different machines)
-- Why? If one computer crashes, you still have 2 other copies! (**Fault tolerance** = system keeps working even when things break)
+**<span style="color:#FF9800;">Replicated</span>** = Each piece is copied 3 times (stored on 3 different machines)  
+- Why? If one computer crashes, you still have 2 other copies! (**<span style="color:#E91E63;">Fault tolerance</span>** = system keeps working even when things break)
+
 
 </div>
 
