@@ -126,88 +126,73 @@ Let's say you're working on a university project about students:
 # ============================================
 
 # List files in your home directory
-hdfs dfs -ls /user/tarik/
+<span style="color:lime;">hdfs</span> <span style="color:cyan;">dfs</span> -ls <span style="color:dodgerblue;">/user/tarik/</span>
 
 # Example output:
 # drwxr-xr-x   - tarik supergroup  0 2024-01-15 10:30 /user/tarik/student_project
 # -rw-r--r--   3 tarik supergroup  1.2G 2024-01-14 09:15 /user/tarik/big_dataset.csv
 
 # List ALL files recursively (shows everything inside folders too)
-hdfs dfs -ls -R /user/tarik/student_project/
+<span style="color:lime;">hdfs</span> <span style="color:cyan;">dfs</span> -ls -R <span style="color:dodgerblue;">/user/tarik/student_project/</span>
 
 # ============================================
 # CREATE DIRECTORY
 # ============================================
 
 # Create a simple directory
-hdfs dfs -mkdir /user/tarik/student_project
+<span style="color:lime;">hdfs</span> <span style="color:cyan;">dfs</span> -mkdir <span style="color:dodgerblue;">/user/tarik/student_project</span>
 
 # Create nested directories (like "mkdir -p" in Linux)
-# This creates all parent directories automatically
-hdfs dfs -mkdir -p /user/tarik/student_project/data/2024/january
+<span style="color:lime;">hdfs</span> <span style="color:cyan;">dfs</span> -mkdir -p <span style="color:dodgerblue;">/user/tarik/student_project/data/2024/january</span>
 
 # ============================================
 # UPLOAD FILE TO HDFS
 # ============================================
 
 # Upload from your local computer to HDFS
-hdfs dfs -put students_data.csv /user/tarik/student_project/
-
-# Now students_data.csv is in HDFS!
-# Local: C:\Users\Tarik\students_data.csv (still here)
-# HDFS:  /user/tarik/student_project/students_data.csv (new copy here)
+<span style="color:lime;">hdfs</span> <span style="color:cyan;">dfs</span> -put <span style="color:orange;">students_data.csv</span> <span style="color:dodgerblue;">/user/tarik/student_project/</span>
 
 # ============================================
 # DOWNLOAD FILE FROM HDFS
 # ============================================
 
 # Download from HDFS to your local computer
-hdfs dfs -get /user/tarik/student_project/students_data.csv downloaded_students.csv
-
-# Now you have: downloaded_students.csv on your local computer
+<span style="color:lime;">hdfs</span> <span style="color:cyan;">dfs</span> -get <span style="color:dodgerblue;">/user/tarik/student_project/students_data.csv</span> <span style="color:orange;">downloaded_students.csv</span>
 
 # ============================================
 # COPY WITHIN HDFS
 # ============================================
 
-# Make a copy inside HDFS (both files stay in HDFS)
-hdfs dfs -cp /user/tarik/student_project/students_data.csv /user/tarik/backup/students_backup.csv
+<span style="color:lime;">hdfs</span> <span style="color:cyan;">dfs</span> -cp <span style="color:dodgerblue;">/user/tarik/student_project/students_data.csv</span> <span style="color:dodgerblue;">/user/tarik/backup/students_backup.csv</span>
 
 # ============================================
 # MOVE/RENAME
 # ============================================
 
-# Rename a file
-hdfs dfs -mv /user/tarik/student_project/students_data.csv /user/tarik/student_project/students_2024.csv
+<span style="color:lime;">hdfs</span> <span style="color:cyan;">dfs</span> -mv <span style="color:dodgerblue;">/user/tarik/student_project/students_data.csv</span> <span style="color:dodgerblue;">/user/tarik/student_project/students_2024.csv</span>
 
-# Move to different directory
-hdfs dfs -mv /user/tarik/student_project/students_2024.csv /user/tarik/archive/
+<span style="color:lime;">hdfs</span> <span style="color:cyan;">dfs</span> -mv <span style="color:dodgerblue;">/user/tarik/student_project/students_2024.csv</span> <span style="color:dodgerblue;">/user/tarik/archive/</span>
 
 # ============================================
 # DELETE FILE
 # ============================================
 
-# Delete a single file
-hdfs dfs -rm /user/tarik/student_project/temp_file.txt
+<span style="color:lime;">hdfs</span> <span style="color:cyan;">dfs</span> -rm <span style="color:dodgerblue;">/user/tarik/student_project/temp_file.txt</span>
 
-# Delete directory and EVERYTHING inside it (-r = recursive = everything)
-hdfs dfs -rm -r /user/tarik/student_project/old_data/
+<span style="color:lime;">hdfs</span> <span style="color:cyan;">dfs</span> -rm -r <span style="color:dodgerblue;">/user/tarik/student_project/old_data/</span>
 
 # ============================================
 # VIEW FILE CONTENT
 # ============================================
 
-# View entire file (like 'cat' in Linux)
-hdfs dfs -cat /user/tarik/student_project/students_2024.csv
+<span style="color:lime;">hdfs</span> <span style="color:cyan;">dfs</span> -cat <span style="color:dodgerblue;">/user/tarik/student_project/students_2024.csv</span>
 
 # Example output:
 # id,name,age,major
 # 1,Alice,20,Computer Science
 # 2,Bob,22,Mathematics
-# ...
 
-# View last 1KB of file (good for log files)
-hdfs dfs -tail /user/tarik/logs/application.log
+<span style="color:lime;">hdfs</span> <span style="color:cyan;">dfs</span> -tail <span style="color:dodgerblue;">/user/tarik/logs/application.log</span>
 ```
 
 ## Key Properties Explained
