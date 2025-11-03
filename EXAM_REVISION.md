@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="hadoop-svgrepo-com.svg" width="120" height="120" alt="Hadoop Logo" />
+
 # Big Data Exam Revision Guide
 
 ![Big Data](sample.webp)
@@ -54,7 +56,10 @@
 
 ## Architecture (MUST KNOW!)
 
-**Cluster** = A group of computers working together like a team
+**Cluster** = The ENTIRE system working together (1 NameNode + ALL the DataNode workers)
+- Think of it as: The whole team (1 boss + all the workers)
+- Example: If you have 1 NameNode and 100 DataNodes → your cluster has 101 computers total
+- NOT just the workers! It's the complete system.
 
 ```
 ┌─────────────────────────────────┐
@@ -276,6 +281,24 @@ hdfs dfs -tail /user/tarik/logs/application.log
 - Hive translates this into complex Hadoop code
 - You don't need to know Hadoop programming!
 
+**What is MapReduce?**
+- MapReduce = Old way of processing big data on Hadoop (before Spark existed)
+- Two steps:
+  1. **Map** = Break big job into smaller tasks, process in parallel
+  2. **Reduce** = Combine results from all tasks
+
+**Example - Count students per city:**
+- **Map step:** Each computer counts students in its data chunk
+  - Computer 1: NYC=100, LA=50
+  - Computer 2: NYC=80, Boston=40
+  - Computer 3: LA=30, NYC=20
+- **Reduce step:** Combine all counts
+  - NYC = 100 + 80 + 20 = 200
+  - LA = 50 + 30 = 80
+  - Boston = 40
+
+**Why you should know this:** Hive uses MapReduce under the hood, but you just write SQL!
+
 **Schema on Read** = Structure is applied when you READ the data (not when you save it)
 - Normal database: You must define structure BEFORE inserting data
 - Hive: Save data first, define structure later when you query it
@@ -299,6 +322,14 @@ CREATE TABLE students (
 )
 ROW FORMAT DELIMITED           -- Tell Hive how data is formatted
 FIELDS TERMINATED BY '\t';     -- Columns separated by TAB character
+
+-- What is '\t'?
+-- '\t' = TAB character (when you press the Tab key on keyboard)
+-- It's invisible but creates space between columns
+--
+-- What are we doing here?
+-- We're telling Hive: "In my file, each column is separated by a TAB"
+-- Example file content: "Alice[TAB]25[TAB]NYC" → 3 columns (name, age, city)
 ```
 
 <div style="background: #ffebee; padding: 10px; border-left: 4px solid #f44336;">
@@ -321,6 +352,19 @@ When you `DROP TABLE students;`:
 ### 2. External Tables
 
 **External** = Hive only remembers the structure, data stays safe elsewhere
+
+**What does "remembers the structure" mean?**
+- Hive stores the table definition (column names, data types) in its metastore (a special database)
+- Example: "The students table has 3 columns: id (INT), name (STRING), age (INT)"
+- Hive also remembers: "The data files are located at /user/tarik/my_data/students/"
+
+**Why does Hive remember this?**
+- So when you run `SELECT * FROM students`, Hive knows:
+  1. Where to find the data files (/user/tarik/my_data/students/)
+  2. How to read them (what columns exist and their types)
+  3. How to organize the results (show id, name, age columns)
+
+**The key point:** Hive remembers the STRUCTURE (table definition), but the actual DATA lives in your specified location on HDFS
 
 ```sql
 -- Real example: Creating external table pointing to existing data
@@ -346,6 +390,39 @@ When you `DROP TABLE students_ext;`:
 **Think of it like:**
 - Managed = Hive owns the data (deleting table deletes data)
 - External = Hive just borrows the data (deleting table doesn't touch data)
+
+**"Deleting table doesn't touch data" - What does this mean?**
+
+When you run `DROP TABLE students_ext;` on an external table:
+
+**What Hive deletes:**
+- The table definition from its metastore
+- The metadata (structure information)
+- The table name (you can't query it anymore)
+
+**What Hive DOES NOT delete:**
+- Your actual data files in `/user/tarik/my_data/students/`
+- All your CSV files stay exactly where they are
+- Other applications can still access these files
+
+**Example:**
+```sql
+DROP TABLE students_ext;  -- Table removed from Hive
+
+-- But your data is STILL THERE:
+hdfs dfs -ls /user/tarik/my_data/students/
+-- Output: students.csv still exists! (file is safe)
+
+-- You can recreate the table later:
+CREATE EXTERNAL TABLE students_ext (id INT, name STRING, age INT)
+LOCATION '/user/tarik/my_data/students/';
+-- Now you can query the same data again!
+```
+
+**Why is this useful?**
+- Safe! Accidentally dropping table won't lose your data
+- Other tools (Spark, Pig, MapReduce) can still use the same files
+- You can share data between multiple applications
 
 </div>
 
@@ -389,9 +466,16 @@ INTO TABLE students;
 **IMPORTANT:**
 
 `LOAD DATA INPATH` (without LOCAL) → **MOVES** the file (original disappears!)
+
 `LOAD DATA LOCAL INPATH` (with LOCAL) → **COPIES** the file (original stays)
 
-**Remember:** INPATH = move, LOCAL INPATH = copy
+**Remember:**
+- INPATH = move (file disappears from original location)
+- LOCAL INPATH = copy (file stays in original location)
+
+**Why the difference?**
+- WITHOUT LOCAL: File is already on HDFS → Hive just MOVES it to warehouse (no copying needed, saves time)
+- WITH LOCAL: File is on your computer → Hive must COPY it to HDFS first (original stays on your computer)
 
 </div>
 
@@ -504,14 +588,49 @@ SELECT * FROM students SORT BY age DESC;
 <td>❌ Not ACID<br><small>No rollback, no commit</small></td>
 </tr>
 <tr>
+<td colspan="3" style="background: #f0f0f0; padding: 10px;">
+<strong>What is ACID? (Simple explanation)</strong><br><br>
+<strong>Atomic</strong> = All or nothing. If you update 100 rows and it fails at row 50, ALL changes are cancelled (rollback).<br>
+Example: Bank transfer - either BOTH accounts update or NEITHER (no half-completed transfers)<br><br>
+<strong>Consistent</strong> = Rules are always followed. If a rule says "age must be positive", database won't accept age = -5.<br>
+Example: You can't have invalid data (like a student with negative age)<br><br>
+<strong>Isolated</strong> = Transactions don't interfere. If two people update the same row, they wait in line (no conflicts).<br>
+Example: Two people booking the last seat - one waits for the other to finish<br><br>
+<strong>Durable</strong> = Once saved, it's permanent. Even if power fails, your changes are saved.<br>
+Example: After you see "Transaction complete", data is safe even if computer crashes immediately
+</td>
+</tr>
+<tr>
 <td><strong>Indexes</strong></td>
 <td>✅ Full index support</td>
 <td>⚠️ Limited index support</td>
 </tr>
 <tr>
+<td colspan="3" style="background: #f0f0f0; padding: 10px;">
+<strong>What is an index?</strong><br>
+An index is like a book's index at the back - it helps you find information quickly without reading everything.<br><br>
+<strong>Without index:</strong> To find all students named "Alice", database scans ALL 1 million rows (slow!)<br>
+<strong>With index:</strong> Database has a list: "Alice → rows 42, 157, 8934" → jumps directly there (fast!)<br><br>
+<strong>Example:</strong> Phone book is indexed by name (find people quickly). Without index, you'd read every page to find someone.
+</td>
+</tr>
+<tr>
 <td><strong>Speed</strong></td>
 <td>⚡ Fast (milliseconds)</td>
 <td>🐢 Slower (seconds to minutes)<br><small>Because it's batch processing</small></td>
+</tr>
+<tr>
+<td colspan="3" style="background: #f0f0f0; padding: 10px;">
+<strong>What is batch processing?</strong><br>
+Process LARGE amounts of data all at once (in a batch), not one item at a time.<br><br>
+<strong>Example 1 - Payroll:</strong><br>
+• Batch: Process all 10,000 employees' salaries at end of month (one big job, takes 1 hour)<br>
+• NOT batch: Calculate each employee's salary individually as they ask (10,000 separate jobs)<br><br>
+<strong>Example 2 - Daily reports:</strong><br>
+• Batch: Process all of today's sales at midnight (analyze 1 million transactions together)<br>
+• NOT batch: Update report after each individual sale (1 million separate updates)<br><br>
+<strong>Why Hive uses batch:</strong> It's designed for analyzing huge datasets (terabytes). Better to process everything together than one row at a time.
+</td>
 </tr>
 <tr>
 <td><strong>Data Scale</strong></td>
@@ -546,6 +665,27 @@ SELECT * FROM students SORT BY age DESC;
 - SQL (query data)
 - ML (machine learning)
 - Graph processing (social network analysis)
+
+**What is Streaming?**
+- Streaming = Process data continuously as it arrives (real-time), not waiting for all data
+- Opposite of batch processing
+
+**Batch vs Streaming examples:**
+
+**Batch processing (Hive style):**
+- Wait for all of today's data → Process at midnight → Get results
+- Example: Daily sales report (wait until day ends, then analyze all sales)
+
+**Streaming (Spark can do this!):**
+- Process data immediately as it comes in
+- Example: Twitter sentiment analysis (analyze each tweet as it's posted, see trends NOW)
+- Example: Fraud detection (check each credit card transaction immediately, block suspicious ones in real-time)
+- Example: Stock market dashboard (update prices every second as trades happen)
+
+**Why streaming is useful:**
+- Get insights instantly (no waiting)
+- React quickly (detect problems immediately)
+- Always up-to-date (not yesterday's data)
 
 </div>
 
@@ -1260,7 +1400,777 @@ rdd.saveAsTextFile("/user/tarik/output")
 
 ---
 
-*[The rest of the content continues with CODE PATTERNS, EXAM QUESTIONS, COMPARISON TABLES, PITFALLS, CHECKLIST, EXERCISES, and TIPS - keeping the same improved style with real examples and explanations]*
+# CODE PATTERNS YOU MUST KNOW
+
+## Pattern 1: Load CSV → Process → Save Results
+
+**Scenario:** You have student grades in CSV, need to calculate averages and save results
+
+```scala
+// ============================================
+// Using Spark DataFrame (EASIER)
+// ============================================
+
+// Step 1: Read CSV file from HDFS
+val df = spark.read
+  .option("header", "true")                    // First line = column names
+  .option("inferSchema", "true")               // Auto-detect data types (INT, STRING, etc.)
+  .csv("/user/tarik/student_project/grades.csv")
+
+// What you have now:
+// +----+-------+--------+------+
+// | id | name  | course | grade|
+// +----+-------+--------+------+
+// |  1 | Alice | Math   |   85 |
+// |  2 | Bob   | Math   |   92 |
+// |  3 | Alice | CS     |   78 |
+// +----+-------+--------+------+
+
+// Step 2: Calculate average grade per student
+val averages = df.groupBy("name")
+  .agg(avg("grade").as("average_grade"))
+
+// Result:
+// +-------+--------------+
+// | name  | average_grade|
+// +-------+--------------+
+// | Alice |          81.5|
+// | Bob   |          92.0|
+// +-------+--------------+
+
+// Step 3: Save to HDFS
+averages.write
+  .mode("overwrite")                           // Replace if exists
+  .csv("/user/tarik/student_project/averages")
+
+// Creates:
+// /user/tarik/student_project/averages/part-00000.csv
+// /user/tarik/student_project/averages/part-00001.csv
+```
+
+## Pattern 2: Filter → Transform → Aggregate
+
+**Scenario:** Find total sales for each product that sold more than 100 units
+
+```scala
+// ============================================
+// Using Spark DataFrame
+// ============================================
+
+// Step 1: Read data
+val sales = spark.read
+  .option("header", "true")
+  .csv("/user/tarik/sales_data.csv")
+
+// Data looks like:
+// product,units,price
+// Laptop,150,800
+// Mouse,50,20
+// Keyboard,200,45
+
+// Step 2: Filter (keep only high-selling products)
+val highSellers = sales.filter($"units" > 100)
+
+// Now only have:
+// Laptop,150,800
+// Keyboard,200,45
+
+// Step 3: Transform (calculate total revenue = units × price)
+val withRevenue = highSellers
+  .withColumn("revenue", $"units" * $"price")
+
+// Result:
+// product,units,price,revenue
+// Laptop,150,800,120000
+// Keyboard,200,45,9000
+
+// Step 4: Aggregate (sum total revenue)
+val totalRevenue = withRevenue.agg(sum("revenue"))
+totalRevenue.show()
+
+// Output: 129000
+```
+
+## Pattern 3: Join Two Datasets
+
+**Scenario:** Match student names with their department information
+
+```scala
+// ============================================
+// Join Pattern
+// ============================================
+
+// Dataset 1: Students
+val students = spark.read.csv("/user/tarik/students.csv")
+// student_id,name
+// 1,Alice
+// 2,Bob
+
+// Dataset 2: Departments
+val departments = spark.read.csv("/user/tarik/departments.csv")
+// student_id,department
+// 1,Computer Science
+// 2,Mathematics
+
+// Join them by student_id
+val joined = students.join(departments, "student_id")
+
+// Result:
+// student_id,name,department
+// 1,Alice,Computer Science
+// 2,Bob,Mathematics
+
+// Alternative: Join with different column names
+val students2 = spark.read.csv("/user/tarik/students2.csv")
+// id,name
+val departments2 = spark.read.csv("/user/tarik/depts2.csv")
+// student_number,dept
+
+val joined2 = students2.join(
+  departments2,
+  students2("id") === departments2("student_number")
+)
+```
+
+## Pattern 4: Hive Table → Spark Processing → Hive Table
+
+**Scenario:** Read from Hive table, process in Spark, write back to Hive
+
+```scala
+// ============================================
+// Hive + Spark Integration
+// ============================================
+
+// Step 1: Read from existing Hive table
+val inputData = spark.sql("SELECT * FROM students WHERE age > 20")
+
+// Step 2: Process in Spark (faster than Hive!)
+val processed = inputData
+  .groupBy("department")
+  .agg(
+    count("*").as("student_count"),
+    avg("gpa").as("average_gpa")
+  )
+
+// Step 3: Write results back to Hive
+processed.write
+  .mode("overwrite")
+  .saveAsTable("department_statistics")
+
+// Now you can query it from Hive:
+// SELECT * FROM department_statistics;
+```
+
+## Pattern 5: Word Count (Classic RDD Pattern)
+
+**Scenario:** Count word frequencies in a book
+
+```scala
+// ============================================
+// Word Count (appears in EVERY exam!)
+// ============================================
+
+val wordCounts = sc.textFile("/user/tarik/books/dracula.txt")
+  .flatMap(line => line.split(" "))            // Split into words
+  .map(word => (word, 1))                      // Create (word, 1) pairs
+  .reduceByKey(_ + _)                          // Sum counts for each word
+  .sortBy(_._2, ascending = false)             // Sort by count
+
+// Save top 100 words
+wordCounts.take(100).foreach(println)
+
+// OR save all results to HDFS
+wordCounts.saveAsTextFile("/user/tarik/wordcount_output")
+```
+
+---
+
+# COMMON EXAM QUESTIONS
+
+## Question 1: Explain HDFS Architecture
+
+**Question:** Describe the architecture of HDFS. What are the roles of NameNode and DataNode?
+
+<div style="background: #e8f5e9; padding: 15px; border-left: 4px solid #4caf50;">
+
+**Good Answer:**
+
+HDFS uses a **master-slave architecture** (master-slave = one boss, many workers):
+
+**NameNode (the master/boss):**
+- **Only ONE** in the cluster
+- Stores **metadata** (= information ABOUT files, like: "where is file X stored?")
+- Does NOT store actual data
+- Keeps track of which DataNodes have which blocks
+- Example: "students.csv block 1 is on DataNode 3, 7, and 12"
+
+**DataNodes (the workers):**
+- **MANY** in the cluster (could be hundreds!)
+- Store the **actual data blocks** (the real file content)
+- Send heartbeat (= "I'm alive!") to NameNode every 3 seconds
+- If DataNode dies, NameNode knows and creates new copies
+
+**How they work together:**
+
+1. You want to read `/user/tarik/report.pdf`
+2. You ask NameNode: "Where is report.pdf?"
+3. NameNode replies: "Block 1 is on DataNode 5, Block 2 is on DataNode 9"
+4. You go directly to DataNode 5 and 9 to get the data
+5. NameNode is NOT involved in data transfer (only tells you where things are)
+
+**Critical point:** If NameNode fails → entire cluster fails! (because nobody knows where anything is anymore)
+
+</div>
+
+## Question 2: Managed vs External Tables in Hive
+
+**Question:** What is the difference between managed and external tables in Hive?
+
+<div style="background: #e8f5e9; padding: 15px; border-left: 4px solid #4caf50;">
+
+**Good Answer:**
+
+**Managed Table (internal table):**
+```sql
+CREATE TABLE students (id INT, name STRING);
+LOAD DATA INPATH '/user/tarik/students.txt' INTO TABLE students;
+```
+
+- Hive **MOVES** the data from HDFS to Hive's warehouse directory
+- Original file `/user/tarik/students.txt` **disappears** (moved!)
+- If you `DROP TABLE students`, the **data is DELETED** forever!
+- Use when: Only your Hive queries need this data
+
+**External Table:**
+```sql
+CREATE EXTERNAL TABLE students (id INT, name STRING)
+LOCATION '/user/tarik/student_project/';
+```
+
+- Data stays in `/user/tarik/student_project/` (NOT moved!)
+- If you `DROP TABLE students`, only the table definition is removed
+- **Data remains safe** in HDFS
+- Use when: Other applications also need this data (Spark, MapReduce, etc.)
+
+**Key difference:**
+
+| Action | Managed Table | External Table |
+|--------|--------------|----------------|
+| DROP TABLE | Data **deleted** | Data **safe** |
+| Data location | Hive warehouse | Your specified location |
+
+**Exam tip:** Always use EXTERNAL if you want to keep your data safe!
+
+</div>
+
+## Question 3: Transformations vs Actions in Spark
+
+**Question:** Explain the difference between transformations and actions in Spark. Give examples.
+
+<div style="background: #e8f5e9; padding: 15px; border-left: 4px solid #4caf50;">
+
+**Good Answer:**
+
+**Transformations (lazy = doesn't execute immediately):**
+- Build a **plan** of what to do (like a to-do list)
+- **Nothing actually happens** until you call an action
+- Return a new RDD/DataFrame
+- Examples: `map`, `filter`, `groupBy`, `join`
+
+```scala
+// These just build the plan (nothing executes yet!)
+val step1 = df.filter($"age" > 20)        // Add to plan: "filter age > 20"
+val step2 = step1.select("name")          // Add to plan: "then select name"
+val step3 = step2.distinct()              // Add to plan: "then remove duplicates"
+
+// Still nothing has happened! Just a plan exists.
+```
+
+**Actions (eager = executes NOW!):**
+- **Triggers execution** of the entire plan
+- Returns results to your program
+- Examples: `count`, `collect`, `show`, `saveAsTextFile`
+
+```scala
+// NOW everything executes!
+val result = step3.collect()  // ← ACTION! Spark runs all transformations now
+```
+
+**Why is this useful?**
+
+Spark can **optimize the entire plan** before executing:
+
+```scala
+df.filter($"age" > 20)        // Plan: filter age > 20
+  .filter($"city" == "NYC")   // Plan: filter city = NYC
+  .count()                    // ACTION!
+
+// Spark optimizes: "I can do both filters at once! More efficient!"
+```
+
+**Memory trick:**
+- **Transformations** = Lazy (Like writing a shopping list, haven't shopped yet)
+- **Actions** = Eager (Actually going to the store and buying things)
+
+</div>
+
+## Question 4: reduceByKey vs groupByKey
+
+**Question:** Why is `reduceByKey` preferred over `groupByKey`? Explain with an example.
+
+<div style="background: #e8f5e9; padding: 15px; border-left: 4px solid #4caf50;">
+
+**Good Answer:**
+
+**Performance:** `reduceByKey` is **10-100 times faster** than `groupByKey`!
+
+**Why?** Let me show you what happens inside:
+
+**Example:** Count how many times each word appears
+
+**BAD: groupByKey** (slow)
+```scala
+wordPairs.groupByKey().mapValues(_.sum)
+```
+
+What happens:
+```
+Computer 1 has: ("apple", 1), ("apple", 1), ("apple", 1)
+Computer 2 has: ("apple", 1), ("apple", 1)
+
+SHUFFLE (send over network):
+→ Send ALL 5 individual numbers: 1, 1, 1, 1, 1
+
+Computer 3 receives: ("apple", [1, 1, 1, 1, 1])
+Then sums: ("apple", 5)
+
+Problem: Sent 5 numbers over the network (waste of bandwidth!)
+```
+
+**GOOD: reduceByKey** (fast)
+```scala
+wordPairs.reduceByKey(_ + _)
+```
+
+What happens:
+```
+Computer 1 has: ("apple", 1), ("apple", 1), ("apple", 1)
+→ Local sum FIRST: ("apple", 3)
+
+Computer 2 has: ("apple", 1), ("apple", 1)
+→ Local sum FIRST: ("apple", 2)
+
+SHUFFLE (send over network):
+→ Send only 2 numbers: 3 and 2
+
+Computer 3 receives: ("apple", 3) and ("apple", 2)
+Final sum: ("apple", 5)
+
+Benefit: Only sent 2 numbers instead of 5! Much less network traffic!
+```
+
+**When to use each:**
+
+→ Use `reduceByKey`: When you can combine values (sum, max, min, multiply, etc.)
+→ Use `groupByKey`: When you actually need ALL individual values (rare!)
+
+**Exam answer:** Always prefer `reduceByKey` because it reduces data LOCALLY before shuffling, reducing network traffic and making it much faster.
+
+</div>
+
+## Question 5: What happens when you run `df.show()`?
+
+**Question:** Trace what happens when you execute `df.show()` in Spark.
+
+<div style="background: #e8f5e9; padding: 15px; border-left: 4px solid #4caf50;">
+
+**Good Answer:**
+
+```scala
+val df = spark.read.csv("/user/tarik/data.csv")
+df.filter($"age" > 20).show()  // What happens here?
+```
+
+**Step-by-step execution:**
+
+1. **`show()` is an ACTION** → triggers execution
+
+2. **Driver** (your program) creates execution plan:
+   - Read CSV file
+   - Filter rows where age > 20
+   - Take first 20 rows
+
+3. **Driver sends tasks to Executors** (workers):
+   - Executor 1: "Read blocks 1-5, filter age > 20"
+   - Executor 2: "Read blocks 6-10, filter age > 20"
+   - Executor 3: "Read blocks 11-15, filter age > 20"
+
+4. **Executors do the work** in parallel:
+   - Each executor reads its blocks
+   - Each executor filters its rows
+   - Each executor sends results back to Driver
+
+5. **Driver collects results:**
+   - Receives filtered rows from all executors
+   - Takes first 20 rows
+   - Formats as pretty table
+   - Prints to your screen
+
+6. **You see output:**
+```
++---+-------+-----+
+| id|   name|  age|
++---+-------+-----+
+|  1|  Alice|   25|
+|  2|    Bob|   30|
+...
+```
+
+**Important points:**
+- Data stays on executors (not all sent to driver)
+- Only 20 rows sent to driver (safe)
+- `collect()` would send ALL rows to driver (dangerous if millions of rows!)
+
+</div>
+
+---
+
+# COMPARISON TABLES
+
+## HDFS Commands: Local vs HDFS Paths
+
+<table style="width: 100%; border-collapse: collapse;">
+<tr style="background: #2196F3; color: white;">
+<th style="padding: 10px;">Action</th>
+<th style="padding: 10px;">Local Computer (Windows/Mac)</th>
+<th style="padding: 10px;">HDFS (Hadoop)</th>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>List files</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>dir</code> (Windows)<br><code>ls</code> (Mac/Linux)</td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>hdfs dfs -ls /user/tarik/</code></td>
+</tr>
+<tr style="background: #f5f5f5;">
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>Create folder</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>mkdir project</code></td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>hdfs dfs -mkdir /user/tarik/project</code></td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>View file</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>type file.txt</code> (Windows)<br><code>cat file.txt</code> (Mac/Linux)</td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>hdfs dfs -cat /user/tarik/file.txt</code></td>
+</tr>
+<tr style="background: #f5f5f5;">
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>Delete file</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>del file.txt</code> (Windows)<br><code>rm file.txt</code> (Mac/Linux)</td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>hdfs dfs -rm /user/tarik/file.txt</code></td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>Copy file</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>copy old.txt new.txt</code></td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>hdfs dfs -cp /user/tarik/old.txt /user/tarik/new.txt</code></td>
+</tr>
+<tr style="background: #f5f5f5;">
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>Upload to HDFS</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">—</td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>hdfs dfs -put local_file.csv /user/tarik/</code></td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>Download from HDFS</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">—</td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>hdfs dfs -get /user/tarik/file.csv .</code></td>
+</tr>
+</table>
+
+## Hive: LOAD DATA Variants
+
+<table style="width: 100%; border-collapse: collapse;">
+<tr style="background: #4CAF50; color: white;">
+<th style="padding: 10px;">Command</th>
+<th style="padding: 10px;">What It Does</th>
+<th style="padding: 10px;">Original File After Loading</th>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>LOAD DATA <strong>LOCAL</strong> INPATH '/home/tarik/data.csv' INTO TABLE students;</code></td>
+<td style="padding: 10px; border: 1px solid #ddd;">Uploads from YOUR computer to Hive<br>(LOCAL = your Windows/Mac/Linux machine)</td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ <strong>Stays on your computer</strong><br>(file is COPIED)</td>
+</tr>
+<tr style="background: #f5f5f5;">
+<td style="padding: 10px; border: 1px solid #ddd;"><code>LOAD DATA INPATH '/user/tarik/data.csv' INTO TABLE students;</code></td>
+<td style="padding: 10px; border: 1px solid #ddd;">Moves from HDFS to Hive warehouse<br>(no LOCAL = from HDFS)</td>
+<td style="padding: 10px; border: 1px solid #ddd;">❌ <strong>Disappears!</strong><br>(file is MOVED, not copied)</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>LOAD DATA INPATH '/user/tarik/data.csv' <strong>OVERWRITE</strong> INTO TABLE students;</code></td>
+<td style="padding: 10px; border: 1px solid #ddd;">Same as above, but <strong>deletes existing data</strong> in table first</td>
+<td style="padding: 10px; border: 1px solid #ddd;">❌ Disappears<br>⚠️ Old table data deleted</td>
+</tr>
+</table>
+
+## Spark: DataFrame vs RDD
+
+<table style="width: 100%; border-collapse: collapse;">
+<tr style="background: #FF9800; color: white;">
+<th style="padding: 10px;">Feature</th>
+<th style="padding: 10px;">DataFrame (Use This!)</th>
+<th style="padding: 10px;">RDD (Old Way)</th>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>Ease of use</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ Easy (like SQL)<br><code>df.filter($"age" > 20)</code></td>
+<td style="padding: 10px; border: 1px solid #ddd;">❌ Complex<br><code>rdd.filter(x => x.age > 20)</code></td>
+</tr>
+<tr style="background: #f5f5f5;">
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>Performance</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ Optimized automatically<br>(Catalyst optimizer)</td>
+<td style="padding: 10px; border: 1px solid #ddd;">❌ You must optimize manually</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>Schema</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ Has schema (knows column names and types)</td>
+<td style="padding: 10px; border: 1px solid #ddd;">❌ No schema (just raw data)</td>
+</tr>
+<tr style="background: #f5f5f5;">
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>When to use</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">✅ <strong>Default choice</strong> for 95% of cases</td>
+<td style="padding: 10px; border: 1px solid #ddd;">Only when you need very low-level control</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>Example</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>spark.read.csv("data.csv")</code></td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>sc.textFile("data.csv")</code></td>
+</tr>
+</table>
+
+## Spark: Transformations vs Actions
+
+<table style="width: 100%; border-collapse: collapse;">
+<tr style="background: #9C27B0; color: white;">
+<th style="padding: 10px; width: 33%;">Property</th>
+<th style="padding: 10px; width: 33%;">Transformations</th>
+<th style="padding: 10px; width: 34%;">Actions</th>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>When executed</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">**Lazy** (not immediately)</td>
+<td style="padding: 10px; border: 1px solid #ddd;">**Eager** (immediately)</td>
+</tr>
+<tr style="background: #f5f5f5;">
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>Return type</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">New RDD/DataFrame</td>
+<td style="padding: 10px; border: 1px solid #ddd;">Result value (number, array, nothing)</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>Examples</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>map</code>, <code>filter</code>, <code>groupBy</code>, <code>join</code>, <code>distinct</code>, <code>select</code></td>
+<td style="padding: 10px; border: 1px solid #ddd;"><code>count</code>, <code>collect</code>, <code>show</code>, <code>take</code>, <code>saveAsTextFile</code></td>
+</tr>
+<tr style="background: #f5f5f5;">
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>Purpose</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">Build a plan of what to do</td>
+<td style="padding: 10px; border: 1px solid #ddd;">Execute the plan and get results</td>
+</tr>
+<tr>
+<td style="padding: 10px; border: 1px solid #ddd;"><strong>Analogy</strong></td>
+<td style="padding: 10px; border: 1px solid #ddd;">Writing a recipe (planning)</td>
+<td style="padding: 10px; border: 1px solid #ddd;">Cooking the food (doing)</td>
+</tr>
+</table>
+
+---
+
+# COMMON PITFALLS (AVOID THESE!)
+
+## Pitfall 1: Using `collect()` on Large Datasets
+
+<div style="background: #ffebee; padding: 15px; border-left: 4px solid #f44336;">
+
+**❌ WRONG:**
+
+```scala
+val df = spark.read.csv("/user/tarik/huge_file_10GB.csv")
+val all_data = df.collect()  // CRASH! Trying to load 10GB into driver memory
+```
+
+**Problem:** `collect()` brings ALL data to your driver program (one computer). If the dataset is huge (gigabytes), your program will crash!
+
+**✅ CORRECT:**
+
+```scala
+// Option 1: Use take() to get just a sample
+val sample = df.take(100)  // Only 100 rows (safe!)
+
+// Option 2: Save to HDFS instead
+df.write.csv("/user/tarik/output/")  // Stays distributed
+
+// Option 3: Use show() for preview
+df.show(20)  // Just show 20 rows for checking
+```
+
+**Rule:** Never use `collect()` unless you're SURE the result is small (< 1GB).
+
+</div>
+
+## Pitfall 2: Using `groupByKey` Instead of `reduceByKey`
+
+<div style="background: #ffebee; padding: 15px; border-left: 4px solid #f44336;">
+
+**❌ WRONG:**
+
+```scala
+word_pairs.groupByKey().mapValues(_.sum)  // SLOW! (10-100x slower)
+```
+
+**Problem:** Sends ALL individual values over the network before combining them.
+
+**✅ CORRECT:**
+
+```scala
+word_pairs.reduceByKey(_ + _)  // FAST! Combines locally first
+```
+
+**Rule:** Always use `reduceByKey` when you can (sum, max, min, multiply, etc.).
+
+</div>
+
+## Pitfall 3: Forgetting `LOCAL` Keyword in Hive LOAD DATA
+
+<div style="background: #ffebee; padding: 15px; border-left: 4px solid #f44336;">
+
+**❌ WRONG:**
+
+```sql
+-- Trying to load from my computer, but forgot LOCAL
+LOAD DATA INPATH 'C:\Users\Tarik\data.csv' INTO TABLE students;
+```
+
+**Error you get:**
+```
+File not found: hdfs://C:\Users\Tarik\data.csv
+```
+
+**Problem:** Without `LOCAL`, Hive looks for the file in HDFS (not your computer)!
+
+**✅ CORRECT:**
+
+```sql
+-- From your computer: use LOCAL
+LOAD DATA LOCAL INPATH 'C:\Users\Tarik\data.csv' INTO TABLE students;
+
+-- From HDFS: no LOCAL
+LOAD DATA INPATH '/user/tarik/data.csv' INTO TABLE students;
+```
+
+**Rule:** Use `LOCAL` when loading from your computer, no `LOCAL` when loading from HDFS.
+
+</div>
+
+## Pitfall 4: Not Understanding Managed vs External Tables
+
+<div style="background: #ffebee; padding: 15px; border-left: 4px solid #f44336;">
+
+**❌ DANGEROUS:**
+
+```sql
+CREATE TABLE important_data (id INT, value STRING);
+LOAD DATA INPATH '/user/tarik/critical_file.csv' INTO TABLE important_data;
+
+-- Later... you DROP the table
+DROP TABLE important_data;
+
+-- OOPS! critical_file.csv is DELETED FOREVER!
+```
+
+**Problem:** Managed tables DELETE your data when you drop the table!
+
+**✅ SAFE:**
+
+```sql
+CREATE EXTERNAL TABLE important_data (id INT, value STRING)
+LOCATION '/user/tarik/project/';
+
+-- Later... you DROP the table
+DROP TABLE important_data;
+
+-- File is SAFE! Only table definition is removed.
+```
+
+**Rule:** Use `EXTERNAL` tables when your data is important or shared with other tools.
+
+</div>
+
+## Pitfall 5: Confusing Transformations with Actions
+
+<div style="background: #ffebee; padding: 15px; border-left: 4px solid #f44336;">
+
+**❌ WRONG EXPECTATION:**
+
+```scala
+val df = spark.read.csv("/user/tarik/data.csv")
+val filtered = df.filter($"age" > 20)
+
+println("Data filtered!")  // WRONG! Nothing has happened yet!
+```
+
+**Problem:** `filter()` is a transformation (lazy). Nothing executes until you call an action!
+
+**✅ CORRECT UNDERSTANDING:**
+
+```scala
+val df = spark.read.csv("/user/tarik/data.csv")
+val filtered = df.filter($"age" > 20)  // Just planning (lazy)
+
+filtered.count()  // NOW it executes! (action triggers execution)
+```
+
+**Rule:** Remember that transformations build a plan. Only actions trigger execution.
+
+</div>
+
+## Pitfall 6: Using Wrong Delimiters in Hive
+
+<div style="background: #ffebee; padding: 15px; border-left: 4px solid #f44336;">
+
+**❌ WRONG:**
+
+```sql
+-- Your CSV file uses commas: Alice,25,NYC
+-- But you create table with tabs as delimiter:
+CREATE TABLE students (name STRING, age INT, city STRING)
+ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t';
+
+LOAD DATA LOCAL INPATH 'students.csv' INTO TABLE students;
+
+SELECT * FROM students;
+-- Result: All data in one column! "Alice,25,NYC" instead of 3 columns
+```
+
+**Problem:** Hive expects tabs (`\t`) but your file has commas (`,`)!
+
+**✅ CORRECT:**
+
+```sql
+-- CSV file (comma-separated)
+-- Your file looks like: Alice,25,NYC
+CREATE TABLE students (name STRING, age INT, city STRING)
+ROW FORMAT DELIMITED FIELDS TERMINATED BY ',';  -- Use comma!
+
+-- OR for tab-separated file (TSV):
+-- Your file looks like: Alice[TAB]25[TAB]NYC
+-- (TAB is invisible space created by pressing Tab key)
+CREATE TABLE students (name STRING, age INT, city STRING)
+ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t';  -- Use tab! (\t = TAB character)
+```
+
+**Rule:** Match your FIELDS TERMINATED BY with your actual file format!
+
+**Common delimiters:**
+- `','` = Comma (CSV files - most common)
+- `'\t'` = Tab character (TSV files)
+- `'|'` = Pipe character (sometimes used in databases)
+- `' '` = Space (rarely used)
+
+</div>
 
 ---
 
