@@ -84,7 +84,7 @@
 
 <div style="background: #fff3cd; padding: 10px; border-left: 4px solid #ffc107;">
 
-**CRITICAL:** <img src="high-priority-svgrepo-com.svg" width="20" height="20" alt="High Priority" style="vertical-align: middle;" /> If NameNode fails → entire cluster fails!
+ <img src="high-priority-svgrepo-com.svg" width="20" height="20" alt="High Priority" style="vertical-align: middle;" /> **CRITICAL:** If NameNode fails → entire cluster fails!
 
 **Why?** Without the catalog, you don't know where anything is!
 - Like a library with no catalog system → books exist but you can't find them
