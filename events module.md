@@ -309,48 +309,343 @@ Success ✓ → Job complete
 
 ---
 
+## Smart Event Routing System
+
+### How Routing Works
+
+When an event arrives, the system automatically routes it to the correct queue based on the event type:
+
+```typescript
+// Event arrives
+booking.created → Check routing map → Route to "emails" queue
+booking.reminder → Check routing map → Route to "notifications" queue
+payment.failed → Check routing map → Route to "tickets" queue
+```
+
+**Implementation:** `services/events-producer.service.ts`
+
+```typescript
+// 1. Get the target queue name from routing config
+const targetQueueName = getQueueForEvent(event.eventType);
+// Result: 'emails', 'notifications', or 'tickets'
+
+// 2. Get the actual queue instance
+const targetQueue = this.queues.get(targetQueueName);
+
+// 3. Get queue-specific retry configuration
+const queueConfig = QUEUE_CONFIG[targetQueueName];
+
+// 4. Add job to the correct queue with its config
+await targetQueue.add('booking-event', event, {
+  attempts: queueConfig.attempts,
+  backoff: queueConfig.backoff,
+});
+```
+
+**Benefits:**
+- ✅ Events automatically go to the right queue
+- ✅ Each queue has its own retry strategy
+- ✅ Easy to add new event types (just update the routing map)
+- ✅ Type-safe routing with TypeScript
+
+---
+
+## Retry & Backoff: Why You Need It
+
+### The Problem: Things Fail in Production
+
+Real-world failures that happen:
+- **Amazon SES is down** → Email can't be sent
+- **Firebase timeout** → Push notification fails
+- **Database connection pool full** → Ticket creation fails
+- **Network hiccup** → API call drops
+
+**Without retry:** Event is lost forever → User never gets notification → Angry customer calls support
+
+**With retry:** System automatically tries again → Notification eventually sent → Happy customer
+
+---
+
+### How Retry & Backoff Work
+
+#### Exponential Backoff (for Emails & Notifications)
+
+**Strategy:** Wait longer after each failure
+
+```
+Attempt 1: Send → ❌ FAIL (SES timeout)
+Wait 2 seconds...
+
+Attempt 2: Send → ❌ FAIL (SES still down)
+Wait 4 seconds... (2 × 2)
+
+Attempt 3: Send → ❌ FAIL
+Wait 8 seconds... (2 × 2 × 2)
+
+Attempt 4: Send → ❌ FAIL
+Wait 16 seconds... (2 × 2 × 2 × 2)
+
+Attempt 5: Send → ✅ SUCCESS! (SES back online)
+```
+
+**Why exponential?**
+- Gives external services time to recover
+- Prevents hammering a failing service
+- Gradually backs off to avoid making problems worse
+
+---
+
+#### Fixed Backoff (for Tickets)
+
+**Strategy:** Wait the same time after each failure
+
+```
+Attempt 1: Create ticket → ❌ FAIL (database busy)
+Wait 5 seconds...
+
+Attempt 2: Create ticket → ❌ FAIL (still busy)
+Wait 5 seconds...
+
+Attempt 3: Create ticket → ✅ SUCCESS!
+```
+
+**Why fixed?**
+- Database issues usually resolve quickly
+- Consistent timing is predictable
+- Simple for operations that don't benefit from long waits
+
+---
+
 ## The 3 Queues Explained
 
 ### Queue #1: `emails`
-**Purpose:** Send email notifications
+**Purpose:** Send email notifications (critical communications)
 
-**Events:**
-- `booking.created`
-- `booking.confirmed`
-- `booking.cancelled`
-- `payment.failed`
+**Events Routed Here:**
+- `booking.created` → Booking confirmation email
+- `booking.confirmed` → Payment confirmation email
+- `booking.cancelled` → Cancellation confirmation email
 
-**Configuration:**
-- 5 retry attempts (email servers can be unreliable)
-- 30-second timeout
-- Exponential backoff (2s → 4s → 8s → 16s → 32s)
+**Retry Configuration:**
+```typescript
+{
+  attempts: 5,                    // Try 5 times total
+  backoff: {
+    type: 'exponential',          // Wait longer each time
+    delay: 2000,                  // Start with 2 seconds
+  }
+}
+```
+
+**Why 5 attempts?**
+- Emails are CRITICAL (booking confirmations, payment receipts)
+- Email services (SES) can be flaky
+- Users will call support if they don't get confirmation
+
+**Why exponential backoff?**
+- SES might hit rate limits → need time to reset quota
+- Don't spam SES when it's having issues
+- Give network/service time to recover
+
+**Real Retry Timeline:**
+```
+Total time if all attempts fail: 2s + 4s + 8s + 16s + 32s = 62 seconds
+```
 
 ---
 
 ### Queue #2: `notifications`
-**Purpose:** Send push/in-app notifications
+**Purpose:** Send push/in-app notifications (real-time updates)
 
-**Events:**
-- `booking.reminder` (urgent reminders)
-- `payment.received` (instant feedback)
+**Events Routed Here:**
+- `booking.reminder` → "Your parking starts in 24 hours"
+- `payment.received` → "Payment received"
 
-**Configuration:**
-- 3 retry attempts (push is usually fast)
-- 15-second timeout
-- Faster processing
+**Retry Configuration:**
+```typescript
+{
+  attempts: 3,                    // Try 3 times total
+  backoff: {
+    type: 'exponential',          // Wait longer each time
+    delay: 1000,                  // Start with 1 second
+  }
+}
+```
+
+**Why 3 attempts?**
+- Push notifications are important but not critical
+- Users can still see them later in-app
+- Faster failure = quicker feedback loop
+
+**Why exponential backoff?**
+- Firebase FCM can timeout under load
+- Network issues resolve quickly
+- Shorter delays keep notifications timely
+
+**Real Retry Timeline:**
+```
+Total time if all attempts fail: 1s + 2s + 4s = 7 seconds
+```
 
 ---
 
 ### Queue #3: `tickets`
-**Purpose:** Create support tickets
+**Purpose:** Create support tickets (automatic issue tracking)
 
-**Events:**
-- `payment.failed` (creates a ticket for support team)
+**Events Routed Here:**
+- `payment.failed` → Creates a support ticket for investigation
 
-**Configuration:**
-- 3 retry attempts
-- 20-second timeout
-- Fixed backoff (consistent 5s delay)
+**Retry Configuration:**
+```typescript
+{
+  attempts: 3,                    // Try 3 times total
+  backoff: {
+    type: 'fixed',                // Always wait the same time
+    delay: 5000,                  // Always wait 5 seconds
+  }
+}
+```
+
+**Why 3 attempts?**
+- Ticket creation should work or fail quickly
+- Database is usually reliable
+- Support team needs to know about issues fast
+
+**Why fixed backoff?**
+- Database connection issues resolve in seconds
+- No benefit to exponential growth
+- Predictable timing for debugging
+
+**Real Retry Timeline:**
+```
+Total time if all attempts fail: 5s + 5s + 5s = 15 seconds
+```
+
+---
+
+## Visual Comparison: With vs Without Retry
+
+### ❌ WITHOUT Retry Config (BAD)
+
+```typescript
+// Old code (don't do this)
+await queue.add('booking-event', event);
+```
+
+**What happens:**
+```
+10:00:00 - Event arrives: booking.created
+10:00:00 - Try to send email via SES
+10:00:01 - ❌ SES timeout error
+10:00:01 - Event LOST FOREVER
+Result: User never gets confirmation email
+        User calls support: "I didn't get my confirmation!"
+        Support team wastes 15 minutes resending manually
+```
+
+---
+
+### ✅ WITH Retry Config (GOOD)
+
+```typescript
+// Current code (production-ready)
+await queue.add('booking-event', event, {
+  attempts: 5,
+  backoff: { type: 'exponential', delay: 2000 }
+});
+```
+
+**What happens:**
+```
+10:00:00 - Event arrives: booking.created
+10:00:00 - Try to send email via SES
+10:00:01 - ❌ SES timeout error
+10:00:03 - Retry #2 → ❌ Still failing
+10:00:07 - Retry #3 → ❌ Still failing
+10:00:15 - Retry #4 → ❌ Still failing
+10:00:31 - Retry #5 → ✅ SUCCESS! Email sent
+Result: User gets confirmation email (31 seconds later)
+        User is happy
+        No support tickets
+        System self-healed
+```
+
+---
+
+## Configuration Reference
+
+**Location:** `config/queue-routing.config.ts`
+
+```typescript
+// Complete routing map
+export const QUEUE_ROUTING_MAP = {
+  'booking.created': 'emails',      // Critical confirmation
+  'booking.confirmed': 'emails',    // Critical confirmation
+  'booking.cancelled': 'emails',    // Critical confirmation
+  'booking.reminder': 'notifications', // Timely reminder
+  'payment.received': 'notifications', // Quick feedback
+  'payment.failed': 'tickets',      // Auto-create support ticket
+};
+
+// Queue-specific retry configs
+export const QUEUE_CONFIG = {
+  emails: {
+    attempts: 5,
+    backoff: { type: 'exponential', delay: 2000 }
+  },
+  notifications: {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 1000 }
+  },
+  tickets: {
+    attempts: 3,
+    backoff: { type: 'fixed', delay: 5000 }
+  },
+};
+```
+
+---
+
+## When to Add More Event Types
+
+### Current Events (MVP - 6 events) ✅
+These cover the critical user journey:
+1. User books → `booking.created`
+2. Payment succeeds → `booking.confirmed`
+3. Payment fails → `payment.failed` → Creates ticket
+4. 24hr before → `booking.reminder`
+5. User cancels → `booking.cancelled`
+6. Payment received → `payment.received`
+
+### Future Events (Add When Needed) 🔮
+**Don't add these yet!** Wait until:
+- Real Booking/Payment services are running
+- You have user feedback about missing notifications
+- You have actual business requirements
+
+Potential future events:
+- `booking.modified` - User changes reservation
+- `booking.checked_in` - User arrives at parking
+- `booking.extended` - User extends stay
+- `user.registered` - Welcome email
+- `parking.availability_low` - Admin alert
+
+**How to add:**
+```typescript
+// Step 1: Add to enum
+export enum EventType {
+  // ... existing events
+  BOOKING_MODIFIED = 'booking.modified',
+}
+
+// Step 2: Add to routing map
+export const QUEUE_ROUTING_MAP = {
+  // ... existing mappings
+  [EventType.BOOKING_MODIFIED]: QueueName.EMAILS,
+};
+
+// Step 3: Done! Routing automatically works
+```
 
 ---
 
